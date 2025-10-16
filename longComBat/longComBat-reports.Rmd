@@ -1,0 +1,139 @@
+---
+title: "longComBat QC: multi-pipeline report"
+output:
+  html_document:
+    self_contained: true
+    toc: true
+    toc_depth: 2
+    theme: readable
+    df_print: paged
+---
+
+```{r}
+
+knitr::opts_chunk$set(
+  echo = FALSE, message = FALSE, warning = FALSE,
+  fig.width = 7, fig.height = 4, fig.retina = 2
+)
+options(knitr.kable.NA = "")
+
+suppressPackageStartupMessages({
+  pacman::p_load(dplyr, tidyr, ggplot2, tibble, knitr, kableExtra)
+})
+root <- ".../projects/abcd-projs/smri-pub-abcd/"
+source("longComBat-pub-sMRI-abcd.R")   
+
+log_file <- "render_progress.log"
+writeLines("", log_file)
+
+```
+
+# pipelines {.tabset .tabset-pills .tabset-dropdown}
+
+```{r, echo = FALSE, results='asis', fig.width = 9, fig.height = 4, message=TRUE, warning=FALSE}
+
+pacman::p_load(dplyr, tidyr, ggplot2, kableExtra) 
+
+pipelines <- tibble::tribble(
+  ~brain,      ~sex,
+  "thickness", "f",
+  "thickness", "m",
+  "area",      "f",
+  "area",      "m",
+  "volume",    "f",
+  "volume",    "m"
+)
+roi_map <- list(
+  thickness = "smri_thick_cdk_cdmdfrlh",
+  area      = "smri_area_cdk_mdtmlh",
+  volume    = "smri_vol_scs_amygdalarh"
+)
+
+for (i in seq_len(nrow(pipelines))) {
+  
+  b <- pipelines$brain[i]
+  s <- pipelines$sex[i]
+  this_roi <- roi_map[[b]]
+  
+  cat("\n", file = log_file, append = TRUE)
+
+  cat(sprintf("--- processing: %s - %s ---\n", b, s), file = log_file, append = TRUE)
+
+  cat(sprintf("## %s — %s\n\n", b, s))
+
+  all_results <- run_it(root = root, brain = b, sex = s, roi = this_roi)
+
+ for (model_name in names(all_results)) {
+    
+    res <- all_results[[model_name]]
+    
+    cat(sprintf("\n\n### harmonization model: `%s`\n\n", model_name))
+    
+    if (!is.null(res$formula_str)) {
+      cat("**longCombat formula:** ", res$formula_str, "\n\n", sep = "")
+    }
+
+    cat(sprintf("**dataset:** %s | **sex:** %s | **region:** %s\n\n", b, s, this_roi))
+
+    print(res$p_before)
+    print(res$p_after)
+    
+    # distributions
+    cat("\n\n#### distributions\n\n")
+    print(res$density)
+    
+    dm <- res$data_model
+    if (is.data.frame(dm) && nrow(dm) > 0) {
+      
+      # LRT tables
+      cat("\n\n#### scanner LRTs\n\n")
+      if (is.data.frame(res$lrt_pre) && nrow(res$lrt_pre) > 1) {
+        print(kable(res$lrt_pre, caption = "LRT before harmonization") %>% kable_styling())
+      }
+      if (is.data.frame(res$lrt_post) && nrow(res$lrt_post) > 1) {
+        print(kable(res$lrt_post, caption = "LRT after harmonization") %>% kable_styling())
+      }
+
+      # other checks and summaries
+      cat("\n\n#### QC plots and summaries\n\n")
+      
+      # ROI summaries before vs after
+      roi_summ <- dm %>%
+        tidyr::pivot_longer(c(brain_metric, brain_metric.combat),
+                            names_to = "pipeline", values_to = "value") %>%
+        group_by(pipeline, scanner) %>%
+        summarise(n = sum(!is.na(value)),
+                  mean = mean(value, na.rm = TRUE),
+                  sd = sd(value, na.rm = TRUE),
+                  .groups = "drop") %>%
+        arrange(pipeline, scanner)
+      
+      if (is.data.frame(roi_summ) && nrow(roi_summ) > 0) {
+        print(kable(roi_summ, digits = 3, caption = "ROI summary by scanner (before vs after)") %>% kable_styling())
+      }
+      
+      # fixed-effect changes summary
+      if (!is.null(res$age_cmp) && !is.null(res$sc_cmp) && nrow(res$age_cmp) > 0) {
+        coef_summary <- dplyr::bind_rows(
+          res$age_cmp %>% dplyr::mutate(kind = "age_slope") %>%
+            dplyr::select(kind, Value_pre, Value_post, diff, pctchg),
+          res$sc_cmp %>% dplyr::transmute(kind = paste0("scanner:", scanner),
+                                          Value_pre = est_pre, Value_post = est_post,
+                                          diff, pctchg)
+        )
+        if (is.data.frame(coef_summary) && nrow(coef_summary) > 0) {
+          print(kable(coef_summary, digits = 3, caption = "Fixed effects change (pre vs post)") %>% kable_styling())
+        }
+      }
+      
+    }
+    
+    cat("\n\n") 
+
+  } # end of inner loop (for each model)
+  
+  cat("\n\n<hr/>\n\n") 
+
+} # end of outer loop (for each pipeline)
+
+```

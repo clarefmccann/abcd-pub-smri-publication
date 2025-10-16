@@ -1,0 +1,637 @@
+---
+title: "abcd pub smri - prep + desc"
+author: "cfm"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    highlight: tango
+    theme: united
+    toc: yes
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+  pdf_document:
+    toc: yes
+---
+
+### setting up markdown {.tabset}
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = TRUE,
+	warning = TRUE
+)
+
+options(scipen=999)
+
+```
+
+### loading required packages
+
+```{r Load Required Packages, message=FALSE, warning=FALSE, include=FALSE}
+
+library(pacman)
+
+pacman::p_load(dplyr, ggplot2, tidyr, lubridate, psych, nlme, data.table, install = TRUE)
+
+```
+
+# setting up
+
+```{r root path}
+
+proj_root = "XXXXX"
+data_root = "XXXXX"
+
+```
+
+## loading in data 
+
+```{r loading in data}
+
+timing_combined_f <- read.csv(paste0(data_root, "physical-health/puberty/parentyouth_unique_fam_id_timing_tempo_f.csv")) %>% 
+  select(id, timing, tempo) %>% 
+  rename("timing_combined" = "timing",
+         "tempo_combined" = "tempo") %>% 
+  mutate(sex = 1)
+
+timing_combined_m <- read.csv(paste0(data_root, "physical-health/puberty/parentyouth_unique_fam_id_timing_tempo_m.csv")) %>% 
+  select(id, timing, tempo) %>% 
+  rename("timing_combined" = "timing",
+         "tempo_combined" = "tempo") %>% 
+  mutate(sex = 0)
+
+timing_combined_f_sens <- read.csv(paste0(data_root, "physical-health/puberty/parentyouth_unique_fam_id_timing_tempo_reg_sens_f.csv")) %>% 
+  select(id, timing, tempo) %>% 
+  rename("timing_combined_sens" = "timing",
+         "tempo_combined_sens" = "tempo") 
+
+timing_combined_m_sens <- read.csv(paste0(data_root, "physical-health/puberty/parentyouth_unique_fam_id_timing_tempo_reg_sens_m.csv")) %>% 
+  select(id, timing, tempo) %>% 
+  rename("timing_combined_sens" = "timing",
+         "tempo_combined_sens" = "tempo") 
+
+timing_parent_f <- read.csv(paste0(data_root, "physical-health/puberty/parent_unique_fam_id_timing_tempo_f.csv")) %>% 
+  select(id, timing, tempo) %>% 
+  rename("timing_parent" = "timing",
+         "tempo_parent" = "tempo")
+
+timing_parent_m <- read.csv(paste0(data_root, "physical-health/puberty/parent_unique_fam_id_timing_tempo_m.csv")) %>% 
+  select(id, timing, tempo) %>% 
+  rename("timing_parent" = "timing",
+         "tempo_parent" = "tempo")
+
+timing_parent_f_sens <- read.csv(paste0(data_root, "physical-health/puberty/parent_unique_fam_id_timing_tempo_reg_sens_f.csv")) %>% 
+  select(id, timing, tempo) %>% 
+  rename("timing_parent_sens" = "timing",
+         "tempo_parent_sens" = "tempo")
+
+timing_parent_m_sens <- read.csv(paste0(data_root, "physical-health/puberty/parent_unique_fam_id_timing_tempo_reg_sens_m.csv")) %>% 
+  select(id, timing, tempo) %>% 
+  rename("timing_parent_sens" = "timing",
+         "tempo_parent_sens" = "tempo")
+
+scanner <- read.csv(paste0(data_root, "imaging/mri_y_adm_info.csv")) %>%
+  rename("id" = "src_subject_id",
+           "wave" = "eventname") %>%
+  select(id, wave, mri_info_manufacturersmn) %>%
+  rename("scanner" = "mri_info_manufacturersmn")
+
+aseg_vol_brain <- read.csv(paste0(data_root, "imaging/mri_y_smr_vol_aseg.csv")) %>%
+  rename("id" = "src_subject_id",
+           "wave" = "eventname")
+dsk_thk_brain <- read.csv(paste0(data_root, "imaging/mri_y_smr_thk_dsk.csv"))%>%
+  rename("id" = "src_subject_id",
+           "wave" = "eventname")
+dsk_area_brain <- read.csv(paste0(data_root, "imaging/mri_y_smr_area_dsk.csv"))%>%
+  rename("id" = "src_subject_id",
+           "wave" = "eventname")
+
+tracking <- read.csv(paste0(data_root, "abcd-general/abcd_y_lt.csv")) %>% 
+  select(src_subject_id, eventname, site_id_l, rel_family_id, interview_age) %>% 
+  rename("id" = "src_subject_id",
+         "wave" = "eventname") %>% 
+  mutate(age = interview_age / 12) %>% 
+  group_by(id) %>% 
+  fill(rel_family_id, .direction = "downup") %>% 
+  ungroup()
+
+bmi <- read.csv("/Users/clarefmccann/University\ of\ Oregon\ Dropbox/Clare\ McCann/mine/projects/abcd-projs/puberty/bmi-abcd.csv")
+inc2needs_f <- read.csv("/Users/clarefmccann/University\ of\ Oregon\ Dropbox/Clare\ McCann/mine/projects/abcd-projs/income-to-needs/income-to-needs-pub-smri_f.csv")
+inc2needs_m <- read.csv("/Users/clarefmccann/University\ of\ Oregon\ Dropbox/Clare\ McCann/mine/projects/abcd-projs/income-to-needs/income-to-needs-pub-smri_m.csv")
+
+data_f <- full_join(aseg_vol_brain, full_join(dsk_area_brain, dsk_thk_brain))
+data_f <- left_join(data_f, tracking, by = c("id", "wave"))
+data_f <- left_join(data_f, bmi, by = c("id", "wave"))
+data_f <- data_f %>% 
+  left_join(inc2needs_f, by = "id") %>% 
+  group_by(id) %>% 
+  fill(inc_to_need, .direction = "downup") %>% 
+  ungroup()
+
+data_f <- left_join(data_f, scanner, by = c("id", "wave"))
+data_f <- data_f %>%
+  left_join(timing_combined_f, by = "id") %>%
+  group_by(id) %>%
+  fill(timing_combined, tempo_combined, .direction = "downup") %>%
+  ungroup()
+
+data_f <- data_f %>%
+  left_join(timing_parent_f, by = "id") %>%
+  group_by(id) %>%
+  fill(timing_parent, tempo_parent, .direction = "downup") %>%
+  ungroup()
+
+data_f <- data_f %>%
+  left_join(timing_combined_f_sens, by = "id") %>%
+  group_by(id) %>%
+  fill(timing_combined_sens, tempo_combined_sens, .direction = "downup") %>%
+  ungroup()
+
+data_f <- data_f %>%
+  left_join(timing_parent_f_sens, by = "id") %>%
+  group_by(id) %>%
+  fill(timing_parent_sens, tempo_parent_sens, .direction = "downup") %>%
+  ungroup() %>% 
+  distinct()
+
+data_m <- full_join(aseg_vol_brain, full_join(dsk_area_brain, dsk_thk_brain))
+data_m <- left_join(data_m, tracking, by = c("id", "wave"))
+data_m <- left_join(data_m, bmi, by = c("id", "wave"))
+data_m <- data_m %>% 
+  left_join(inc2needs_m, by = "id") %>% 
+  group_by(id) %>% 
+  fill(inc_to_need, .direction = "downup") %>% 
+  ungroup()
+
+data_m <- left_join(data_m, scanner, by = c("id", "wave"))
+data_m <- data_m %>%
+  left_join(timing_combined_m, by = "id") %>%
+  group_by(id) %>%
+  fill(timing_combined, tempo_combined, .direction = "downup") %>%
+  ungroup()
+
+data_m <- data_m %>%
+  left_join(timing_parent_m, by = "id") %>%
+  group_by(id) %>%
+  fill(timing_parent, tempo_parent, .direction = "downup") %>%
+  ungroup()
+
+data_m <- data_m %>%
+  left_join(timing_combined_m_sens, by = "id") %>%
+  group_by(id) %>%
+  fill(timing_combined_sens, tempo_combined_sens, .direction = "downup") %>%
+  ungroup()
+
+data_m <- data_m %>%
+  left_join(timing_parent_m_sens, by = "id") %>%
+  group_by(id) %>%
+  fill(timing_parent_sens, tempo_parent_sens, .direction = "downup") %>%
+  ungroup() %>% 
+  distinct()
+
+
+```
+
+## creating whole dataframe
+```{r creating whole df}
+
+whole <- full_join(data_m, data_f) %>% 
+  distinct() %>% 
+  filter(!is.na(timing_parent))
+#filter(if_any(c(timing_parent, timing_youth, timing_combined), ~ !is.na(.)))
+
+whole <- whole %>%
+  mutate(scanner = ifelse(scanner == "Achieva dStream", "scanner1",
+                          ifelse(scanner == "DISCOVERY MR750", "scanner2",
+                                 ifelse(scanner == "Ingenia", "scanner3",
+                                        ifelse(scanner == "Orchestra SDK", "scanner4",
+                                               ifelse(scanner == "Prisma", "scanner5",
+                                                      ifelse(scanner == "Prisma_fit", "scanner6",
+                                                             ifelse(scanner == "SIGNA Premier", "scanner7",
+                                                                    ifelse(scanner == "SIGNA UHP", "scanner8",
+                                                                           scanner)))))))))
+
+
+## excluding those who didn't pass motion check
+
+incl <- read.csv(paste0(data_root, "imaging/mri_y_qc_incl.csv")) %>%
+  select(src_subject_id, eventname, imgincl_t1w_include) %>%
+  rename("id" = "src_subject_id",
+         "wave" = "eventname")
+
+whole_inc <- whole %>%
+  anti_join(incl %>% filter(imgincl_t1w_include == 0), by = c("id", "wave"))
+
+whole <- whole_inc
+
+```
+## creating dataframes for males & females by brain metric
+
+```{r analysis specific df}
+
+data_f <- whole %>%
+  filter(sex == 1,
+         tempo_parent > -0.95) 
+
+data_m <- whole %>%
+  filter(sex == 0,
+         tempo_parent > -0.957)
+
+num_unique_ids_m <- length(unique(data_m$id))
+num_unique_ids_f <- length(unique(data_f$id))
+
+print(num_unique_ids_f) # 3020
+print(num_unique_ids_m) # 3451
+
+data_volume_f <- data_f %>%
+  select(id, wave, bmi, inc_to_need, timing_parent, timing_combined, timing_combined_sens, timing_parent_sens, tempo_parent, tempo_combined, tempo_combined_sens, tempo_parent_sens, site_id_l, age, scanner, matches("vol"))
+
+data_thickness_f <- data_f %>%
+  select(id, wave, bmi, inc_to_need, timing_parent, timing_combined, timing_combined_sens, timing_parent_sens, tempo_parent, tempo_combined, tempo_combined_sens, tempo_parent_sens, site_id_l, age, scanner, matches("thick")) 
+
+data_area_f <- data_f %>%
+  select(id, wave, bmi, inc_to_need, timing_parent, timing_combined, timing_combined_sens, timing_parent_sens, tempo_parent, tempo_combined, tempo_combined_sens, tempo_parent_sens, site_id_l, age, scanner, matches("area")) 
+
+data_volume_m <- data_m %>%
+  select(id, wave, bmi, inc_to_need, timing_parent, timing_combined, timing_combined_sens, timing_parent_sens, tempo_parent, tempo_combined, tempo_combined_sens, tempo_parent_sens, site_id_l, age, scanner, matches("vol")) 
+
+data_thickness_m <- data_m %>%
+  select(id, wave, bmi, inc_to_need, timing_parent, timing_combined, timing_combined_sens, timing_parent_sens, tempo_parent, tempo_combined, tempo_combined_sens, tempo_parent_sens, site_id_l, age, scanner, matches("thick")) 
+
+data_area_m <- data_m %>%
+  select(id, wave, bmi, inc_to_need, timing_parent, timing_combined, timing_combined_sens, timing_parent_sens, tempo_parent, tempo_combined, tempo_combined_sens, tempo_parent_sens, site_id_l, age, scanner, matches("area")) 
+
+data_f_vol_long <- data_volume_f %>%
+  pivot_longer(cols = c(16:61), values_to = "volume", names_to = "region") %>%
+  select(id, wave, scanner, bmi, inc_to_need, timing_parent, tempo_parent, timing_combined, tempo_combined, timing_parent_sens, tempo_parent_sens, timing_combined_sens, tempo_combined_sens, age, site_id_l, region, volume)
+
+data_m_vol_long <- data_volume_m %>%
+  pivot_longer(cols = 16:61, values_to = "volume", names_to = "region")  %>%
+  select(id, wave, scanner, bmi, inc_to_need, timing_parent, tempo_parent, timing_combined, tempo_combined, timing_parent_sens, tempo_parent_sens, timing_combined_sens, tempo_combined_sens, age, site_id_l, region, volume)
+
+data_f_thickness_long <- data_thickness_f %>%
+  pivot_longer(cols = 16:86, values_to = "thickness", names_to = "region")  %>%
+  select(id, wave, scanner, bmi, inc_to_need, timing_parent, tempo_parent, timing_combined, tempo_combined, timing_parent_sens, tempo_parent_sens, timing_combined_sens, tempo_combined_sens, age, site_id_l, region, thickness)
+
+data_m_thickness_long <- data_thickness_m %>%
+  pivot_longer(cols = 16:86, values_to = "thickness", names_to = "region")  %>%
+  select(id, wave, scanner, bmi, inc_to_need, timing_parent, tempo_parent, timing_combined, tempo_combined, timing_parent_sens, tempo_parent_sens, timing_combined_sens, tempo_combined_sens, age, site_id_l, region, thickness)
+
+data_f_area_long <- data_area_f %>%
+  pivot_longer(cols = 16:86, values_to = "area", names_to = "region") %>%
+  select(id, wave, scanner, bmi, inc_to_need, timing_parent, tempo_parent, timing_combined, tempo_combined, timing_parent_sens, tempo_parent_sens, timing_combined_sens, tempo_combined_sens, age, site_id_l, region, area)
+
+data_m_area_long <- data_area_m %>%
+  pivot_longer(cols = 16:86, values_to = "area", names_to = "region") %>%
+  select(id, wave, scanner, bmi, inc_to_need, timing_parent, tempo_parent, timing_combined, tempo_combined, timing_parent_sens, tempo_parent_sens, timing_combined_sens, tempo_combined_sens, age, site_id_l, region, area)
+
+write.csv(data_f_vol_long, file = paste0(proj_root, "data/data_f_volume_long_sens.csv"))
+write.csv(data_m_vol_long, file = paste0(proj_root, "data/data_m_volume_long_sens.csv"))
+write.csv(data_f_thickness_long, file = paste0(proj_root, "data/data_f_thickness_long_sens.csv"))
+write.csv(data_m_thickness_long, file = paste0(proj_root, "data/data_m_thickness_long_sens.csv"))
+write.csv(data_f_area_long, file = paste0(proj_root, "data/data_f_area_long_sens.csv"))
+write.csv(data_m_area_long, file = paste0(proj_root, "data/data_m_area_long_sens.csv"))
+
+
+
+```
+# descriptives
+
+## checking demos on those excluded
+
+```{r checking demos on those excluded}
+
+merged <- full_join(data_f_area_long, data_m_area_long)
+
+demo <- read.csv(paste0(data_root, "abcd-general/abcd_p_demo.csv")) %>%
+    rename("id" = "src_subject_id",
+           "wave" = "eventname",
+           "grade" = "demo_ed_v2",
+           "gender" = "demo_gender_id_v2",
+           "sex" = "demo_sex_v2",
+           "white" = "demo_prnt_race_a_v2___10",
+           "black" = "demo_prnt_race_a_v2___11",
+           "aina" = "demo_prnt_race_a_v2___12",
+           "an" = "demo_prnt_race_a_v2___13",
+           "nh" = "demo_prnt_race_a_v2___14",
+           "guam" = "demo_prnt_race_a_v2___15",
+           "samoan" = "demo_prnt_race_a_v2___16",
+           "pin" = "demo_prnt_race_a_v2___17",
+           "indian" = "demo_prnt_race_a_v2___18",
+           "chinese" = "demo_prnt_race_a_v2___19",
+           "filipino" = "demo_prnt_race_a_v2___20",
+           "japanese" = "demo_prnt_race_a_v2___21",
+           "korean" = "demo_prnt_race_a_v2___22",
+           "vietnamese" = "demo_prnt_race_a_v2___23",
+           "asian_other" = "demo_prnt_race_a_v2___24",
+           "other" = "demo_prnt_race_a_v2___25",
+           "refuse_race" = "demo_prnt_race_a_v2___77",
+           "dont_know_race" = "demo_prnt_race_a_v2___99",
+           "ethn" = "demo_ethn_v2",
+           "ethn_specified" = "demo_ethn2_v2",
+           "income" = "demo_comb_income_v2_l") %>%
+  select(id, wave, white, black, aina, an, nh, guam, samoan, pin, indian, chinese, filipino, japanese, vietnamese, asian_other, other, refuse_race, dont_know_race, ethn, ethn_specified, income, gender, sex) %>% 
+  filter(wave == "baseline_year_1_arm_1")
+
+
+excluded <- demo[!demo$id %in% merged$id, ] # 812
+included <- demo[demo$id %in% merged$id, ]
+
+dataframes <- list(excluded = excluded, included = included)
+
+for (name in names(dataframes)) {
+  
+  data <- dataframes[[name]]
+  
+  subset <- data[, c("id", "white", "black", "aina", "an", "nh", "guam", "samoan", "pin", "indian", "chinese", "filipino", "japanese", "vietnamese", "asian_other", "other", "ethn")]
+  
+  subset <- subset %>% 
+    mutate(ethn = ifelse(ethn == 1, 1,
+                         ifelse(ethn == 2, 0,
+                                ifelse(ethn == 777, 0,
+                                       ifelse(ethn == 999, 0,
+                                ethn)))))
+  
+  # calculating how many races each px identifies with
+  subset$count <- rowSums(subset[, -1], na.rm = TRUE)
+  
+  subset <- subset %>% 
+    filter(!count == 0)
+  
+  # removing rows with greater than 1 race
+  
+  rows_to_remove <- subset$count > 1
+  removed_df <- subset[rows_to_remove, ]
+  remaining_df <- subset[!rows_to_remove, ]
+  removed_df$multiracial <- 1 # adding multiracial identity
+  remaining_df$multiracial <- 0
+  
+  # logic to put stuff back together
+  
+  # if multiracial, making all other races 0
+  removed_df[, c("white", "black", "aina", "an", "nh", "guam", "samoan", "pin", 
+                 "indian", "chinese", "filipino", "japanese", "vietnamese", 
+                 "asian_other", "other", "ethn")] <- 0
+  
+  # put removed and remaining df back together to have all px in the respective df 
+  combined_df <- rbind(remaining_df, removed_df)
+  
+  race_values <- c("white", "black", "aina", "an", "nh", "guam", "samoan", "pin", 
+                   "indian", "chinese", "filipino", "japanese", "vietnamese", 
+                   "asian_other", "other", "ethn", "multiracial")
+  
+  # create one "race" column uses numbers 
+  # 0 = white, 1 = black, 2 = aina, 3 = an, 4 = nh, 5 = guam, 6 = samoan, 7 = pin, 8 = indian, 9 = chinese, 10 = filipino, 11 = japanese, 12 = vietnamese, 13 = asian_other, other = 14, ethn (hisp) = 15, multiracial = 16
+  
+  combined_df$race <- apply(combined_df[, race_values], 1, function(row) {
+    race_index <- which(row == 1)
+    if (length(race_index) == 0) {
+      return(NA)  
+    } else {
+      return(race_index - 1)  
+    }
+  })
+  
+  dataframes[[name]] <- combined_df
+
+  
+}
+
+excluded_race_info <- dataframes$excluded
+included_race_info <- dataframes$included
+
+excluded_race_info <- excluded_race_info %>% 
+  mutate(status = 1)
+
+included_race_info <- included_race_info %>% 
+  mutate(status = 0)
+
+print("printing race table for those included")
+table(included_race_info$race)
+
+race_status <- full_join(excluded_race_info, included_race_info)
+
+## one way anova to see if whether someone was included was effected by race/ethn
+print("is race predictive of whether someone was excluded?")
+str(race_status$race)
+summary(race_status$race)
+
+race_status_model <- glm(status ~ as.factor(race), data = race_status, family = binomial)
+summary(race_status_model)
+
+print("race - males")
+
+included_race_info_m <- included_race_info[which(included_race_info$id %in% data_m$id),]
+table(included_race_info_m$race)
+
+print("race - females")
+
+included_race_info_f <- included_race_info[which(included_race_info$id %in% data_f$id),]
+table(included_race_info_f$race)
+
+
+###########################################################
+# for other demos
+
+excluded$status <- 1
+included$status <- 0
+
+print("printing gender table for those included")
+table(included$gender)
+
+print("printing sex table for those included")
+table(included$sex)
+
+status <- full_join(excluded, included)
+
+###########################################################
+
+print("is gender predictive of whether someone was excluded?")
+
+str(status$gender)
+summary(status$gender)
+
+status_gender <- status %>% 
+  filter(!is.na(gender),
+         !gender == 999,
+         !gender == 777)
+
+gender_status_model <- glm(status ~ as.factor(gender), data = status_gender, family = binomial)
+summary(gender_status_model)
+
+###########################################################
+print("is sex predictive of whether someone was excluded?")
+
+str(status$sex)
+summary(status$sex)
+
+status_sex <- status %>% 
+  filter(!is.na(sex))
+
+sex_status_model <- glm(status ~ as.factor(sex), data = status_sex, family = binomial)
+summary(sex_status_model)
+
+##########################################################
+
+print("is ses predictive of whether someone was excluded?")
+
+income <- read.csv(paste0(data_root, "abcd-general/abcd_p_demo.csv")) %>%
+    rename("id" = "src_subject_id",
+           "wave" = "eventname",
+           "income" = "demo_comb_income_v2_l") %>% 
+  select(id, wave, income) %>% 
+  filter(!is.na(income)) %>% 
+  mutate(income = ifelse(income == 777, 11,
+                         ifelse(income == 999, 12,
+                                income)))
+
+excluded_income <- income[!income$id %in% merged$id, ] # 812
+included_income <- income[income$id %in% merged$id, ]
+
+print("income - males")
+
+included_income_m <- included_income[which(included_income$id %in% data_m_area_long$id),]
+
+included_income_m <- included_income_m %>%
+  group_by(id) %>%
+  slice_sample(n = 1)
+
+table(included_income_m$income)
+
+print("income - females")
+
+included_income_f <- included_income[which(included_income$id %in% data_f_area_long$id),]
+
+included_income_f <- included_income_f %>%
+  group_by(id) %>%
+  slice_sample(n = 1)
+
+table(included_income_f$income)
+
+
+excluded_income$status <- 1
+included_income$status <- 0
+
+status_income <- full_join(included_income, excluded_income)
+
+str(status_income$income)
+summary(status_income$income)
+
+status_income <- status_income %>% 
+  filter(!is.na(income))
+
+ses_status_model <- glm(status ~ as.factor(income), data = status_income, family = binomial)
+summary(ses_status_model)
+
+print(paste("printing income table for those included"))
+table(status$income)
+
+### AGE AT EACH WAVE ###
+
+tracking <- read.csv(paste0(data_root, "abcd-general/abcd_y_lt.csv")) %>% 
+  rename("id" = "src_subject_id",
+           "wave" = "eventname") %>% 
+  select(id, wave, interview_age) %>% 
+  mutate(age = interview_age / 12)
+
+sex <- demo %>% 
+  select(id, wave, sex)
+
+tracking_sex <- left_join(tracking, sex, by = c("id", "wave"))
+
+merged <- full_join(data_f_area_long, data_m_area_long)
+for_age <- tracking_sex[which(tracking_sex$id %in% merged$id),]
+
+for_age <- for_age %>% 
+  group_by(id) %>% 
+  fill(sex, .direction = "downup") %>%  
+  ungroup()
+
+age <- for_age %>%
+  group_by(wave, sex) %>%
+  summarise(
+    mean_age = mean(age, na.rm = TRUE),
+    sd_age = sd(age, na.rm = TRUE),
+    n = n()
+  )
+
+
+print(age)
+
+```
+
+## visualizing pds breakdown by wave and sex
+
+```{r visualizing pds breakdown by wave and sex}
+
+# creating visualization
+
+pds_f <- read.csv(paste0(data_root, "physical-health/puberty/parent_tannerstages_f.csv")) %>% 
+  select(id, wave, PDSS, rel_family_id) %>% 
+  mutate(sex = 1)
+pds_m <- read.csv(paste0(data_root, "physical-health/puberty/parent_tannerstages_m.csv")) %>% 
+  select(id, wave, PDSS, rel_family_id) %>% 
+  mutate(sex = 0)
+
+pds <- full_join(pds_f, pds_m)
+pds <- pds[pds$id %in% whole$id, ]
+
+mean_pub_df <- pds %>%
+  group_by(wave, sex) %>%
+  summarize(mean_pub = mean(PDSS),
+            sd_pub = sd(PDSS, na.rm = TRUE),
+            .groups = 'drop') %>%
+  mutate(wave = ifelse(wave == "2_year_follow_up_y_arm_1", "FU2",
+                       ifelse(wave == "4_year_follow_up_y_arm_1", "FU4",
+ifelse(wave == "baseline_year_1_arm_1", "BL",
+       ifelse(wave == "1_year_follow_up_y_arm_1", "FU1",
+              ifelse(wave == "3_year_follow_up_y_arm_1", "FU3",
+       wave))))))
+
+dodge <- position_dodge(width = 0.4)
+
+mean_pub_plot <- ggplot(mean_pub_df, aes(x = wave, y = mean_pub, color = as.factor(sex), group = as.factor(sex))) +
+  geom_line(position = dodge) +
+  geom_point(position = dodge, size = 3) +
+  geom_errorbar(aes(ymin = mean_pub - sd_pub, ymax = mean_pub + sd_pub),
+                position = dodge, width = 0.15, size = 0.7, alpha = 0.4) +
+  labs(title = "Mean Pubertal Stage at Each Time Point by Sex",
+       x = "Time Point",
+       y = "Mean Pubertal Stage") +
+  scale_color_manual(name = "Sex",
+                     labels = c("Male", "Female"),
+                     values = c("#332288", "#88CCEE"))+
+  theme(
+          panel.background = element_rect(fill = "transparent", color = NA),
+          plot.background = element_rect(fill = "transparent", color = NA),
+          legend.background = element_blank(),
+          legend.key = element_blank(), 
+          legend.key.size = unit(1.2, "lines"),
+          text = element_text(family = "Times", color = "black", size = 22),
+          axis.text = element_text(color = "black", size = 20),
+          axis.title = element_text(color = "black", size = 22),
+          plot.title = element_text(color = "black", family = "Times", size = 24, face = "bold")
+        )
+
+print(mean_pub_plot)
+
+ggsave(mean_pub_plot, filename = paste0(proj_root, "desc/pds_mean.png"), width=8, height=8, units='in', dpi=300, bg = "transparent")
+
+pds <- pds %>%
+  group_by(wave, sex) %>%
+  summarise(
+    mean_pds = mean(PDSS, na.rm = TRUE),
+    sd_pds = sd(PDSS, na.rm = TRUE),
+    n = n()
+  )
+
+print(pds)
+
+
+
+```
