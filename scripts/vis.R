@@ -11,7 +11,7 @@ pacman::p_load(
 )
 
 # set root directories
-proj_root <- "/Users/clarefmccann/University of Oregon Dropbox/Clare McCann/mine/projects/abcd-projs/smri-pub-abcd/"
+proj_root <- ".../projects/abcd-projs/smri-pub-abcd/"
 data_root <- file.path(proj_root, "results/")
 plot_output_dir <- file.path(data_root, "plots/")
 
